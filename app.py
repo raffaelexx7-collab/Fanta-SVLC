@@ -4,15 +4,30 @@ import json
 import os
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="Fanta-Amici Mobile", layout="centered")
+st.set_page_config(page_title="Fanta-Amici", layout="centered")
 
-FILE_DATI = "fanta_data_v2.json"
+FILE_DATI = "fanta_data_v3.json"
+
+# Lista FISSA dei partecipanti (nessuna aggiunta possibile)
+PARTECIPANTI_FISSI = [
+    "Alby", "Alfiere", "Edu", "Giorgio", "Keuch", 
+    "Lupo", "Marika", "Mavi", "Mery", "Raffo", "Vincenzo"
+]
 
 def carica_dati():
     if os.path.exists(FILE_DATI):
         with open(FILE_DATI, "r") as f:
-            return json.load(f)
-    return {"amici": {}, "log": [], "regolamento": {}}
+            dati = json.load(f)
+            # Filtriamo i dati per tenere solo i nomi della lista fissa
+            dati["amici"] = {nome: dati["amici"].get(nome, 0) for nome in PARTECIPANTI_FISSI}
+            return dati
+    
+    # Inizializzazione se il file non esiste
+    return {
+        "amici": {nome: 0 for nome in PARTECIPANTI_FISSI},
+        "log": [],
+        "regolamento": {}
+    }
 
 def salva_dati(dati):
     with open(FILE_DATI, "w") as f:
@@ -22,12 +37,13 @@ dati = carica_dati()
 
 # --- SIDEBAR / MENU ---
 st.sidebar.title("🏆 Fanta-Amici")
-menu = st.sidebar.radio("Vai a:", ["Classifica", "Assegna Punti", "Gestione Amici", "Configurazione Excel"])
+# Menu ridotto: rimossa la gestione amici
+menu = st.sidebar.radio("Vai a:", ["Classifica", "Assegna Punti", "Configurazione Excel"])
 
 # --- 1. CONFIGURAZIONE EXCEL (IMPORT REGOLAMENTO) ---
 if menu == "Configurazione Excel":
     st.header("📂 Importa Regolamento")
-    st.write("Carica un file Excel con le colonne: **Azione** e **Punteggio**")
+    st.write("Carica il file Excel con le colonne: **Azione** e **Punteggio**")
     
     file_caricato = st.file_uploader("Scegli un file Excel", type=["xlsx", "csv"])
     
@@ -38,68 +54,52 @@ if menu == "Configurazione Excel":
             else:
                 df = pd.read_excel(file_caricato)
             
-            # Trasformiamo il dataframe in un dizionario per l'app
             nuovo_regolamento = dict(zip(df['Azione'], df['Punteggio']))
             dati["regolamento"] = nuovo_regolamento
             salva_dati(dati)
-            st.success("✅ Regolamento aggiornato con successo!")
-            st.dataframe(df) # Mostra l'anteprima
+            st.success("✅ Regolamento caricato correttamente!")
+            st.table(df) # Mostra tabella per controllo rapido
         except Exception as e:
-            st.error(f"Errore nel caricamento: Assicurati che le colonne si chiamino 'Azione' e 'Punteggio'.")
+            st.error("Errore nel file: assicurati che le intestazioni siano 'Azione' e 'Punteggio'.")
 
-# --- 2. GESTIONE AMICI ---
-elif menu == "Gestione Amici":
-    st.header("👥 Partecipanti")
-    nuovo_amico = st.text_input("Nome nuovo amico:")
-    if st.button("Aggiungi"):
-        if nuovo_amico and nuovo_amico not in dati["amici"]:
-            dati["amici"][nuovo_amico] = 0
-            salva_dati(dati)
-            st.rerun()
-    
-    for nome in list(dati["amici"].keys()):
-        col1, col2 = st.columns([3, 1])
-        col1.write(nome)
-        if col2.button("Elimina", key=nome):
-            del dati["amici"][nome]
-            salva_dati(dati)
-            st.rerun()
-
-# --- 3. ASSEGNA PUNTI ---
+# --- 2. ASSEGNA PUNTI ---
 elif menu == "Assegna Punti":
-    st.header("⚡ Bonus e Malus")
+    st.header("⚡ Assegna Bonus/Malus")
     
-    if not dati["amici"] or not dati["regolamento"]:
-        st.warning("Configura prima gli amici e carica il regolamento Excel!")
+    if not dati["regolamento"]:
+        st.warning("⚠️ Carica prima il regolamento nel menu 'Configurazione Excel'!")
     else:
-        amico = st.selectbox("Chi?", list(dati["amici"].keys()))
-        azione = st.selectbox("Cosa ha fatto?", list(dati["regolamento"].keys()))
-        giorno = st.date_input("Quando?")
+        # Selettore limitato solo ai partecipanti fissi
+        amico = st.selectbox("Chi ha fatto l'azione?", PARTECIPANTI_FISSI)
+        azione = st.selectbox("Seleziona l'azione:", list(dati["regolamento"].keys()))
+        giorno = st.date_input("Data dell'evento")
         
-        if st.button("Conferma Punti"):
+        if st.button("Conferma e Salva"):
             punti = dati["regolamento"][azione]
             dati["amici"][amico] += punti
             dati["log"].append(f"{giorno} - {amico}: {punti} pt ({azione})")
             salva_dati(dati)
-            st.success(f"Punti assegnati a {amico}!")
+            st.success(f"Punteggio aggiornato per {amico}!")
 
-# --- 4. CLASSIFICA ---
+# --- 3. CLASSIFICA ---
 elif menu == "Classifica":
-    st.header("📊 Leaderboard")
-    if dati["amici"]:
-        classifica = pd.DataFrame(
-            list(dati["amici"].items()), 
-            columns=["Amico", "Punti"]
-        ).sort_values(by="Punti", ascending=False)
-        
-        # Design classifica
-        for i, row in enumerate(classifica.itertuples(), 1):
-            st.subheader(f"{i}. {row.Amico} ➔ {row.Punti} pt")
-        
+    st.header("📊 Classifica Generale")
+    
+    # Creazione DataFrame per la visualizzazione
+    classifica = pd.DataFrame(
+        list(dati["amici"].items()), 
+        columns=["Amico", "Punti"]
+    ).sort_values(by="Punti", ascending=False)
+    
+    # Visualizzazione podio e altri
+    for i, row in enumerate(classifica.itertuples(), 1):
+        prefisso = "🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else f"{i}."
+        st.subheader(f"{prefisso} {row.Amico}: {row.Punti} pt")
+    
+    if dati["log"]:
         st.divider()
-        st.write("📖 Storico eventi:")
-        for log in reversed(dati["log"]):
+        st.write("📜 **Ultimi aggiornamenti:**")
+        # Mostra gli ultimi 15 eventi registrati
+        for log in reversed(dati["log"][-15:]):
             st.caption(log)
-    else:
-        st.info("Nessun partecipante ancora iscritto.")
-      
+            
