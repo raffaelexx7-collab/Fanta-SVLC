@@ -7,41 +7,45 @@ import io
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Fanta-SanVito 2026", layout="centered", page_icon="🏖️")
 
-# --- CSS PERSONALIZZATO PER IL LOOK ---
+# --- CSS AGGIORNATO PER MASSIMA LEGGIBILITÀ ---
 st.markdown("""
     <style>
     .main {
-        background-color: #f0f8ff;
+        background-color: #eef2f7;
+    }
+    /* Stile per le card della classifica */
+    .card-comune {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        margin-bottom: 12px;
+        border: 2px solid #d1d9e6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .card-oro { border: 3px solid #FFD700; background-color: #FFFDF0; }
+    .card-argento { border: 3px solid #C0C0C0; background-color: #F8F8F8; }
+    .card-bronzo { border: 3px solid #CD7F32; background-color: #FFF9F5; }
+    
+    .nome-partecipante {
+        color: #1a2a6c;
+        font-size: 24px !important;
+        font-weight: 800 !important;
+        font-family: 'Helvetica Neue', sans-serif;
+    }
+    .punti-display {
+        color: #ff4b4b;
+        font-size: 28px !important;
+        font-weight: 900 !important;
     }
     .stButton>button {
-        width: 100%;
-        border-radius: 20px;
-        background-color: #ff4b4b;
+        border-radius: 10px;
+        height: 3em;
+        background-color: #1a2a6c;
         color: white;
         font-weight: bold;
-        border: none;
-        transition: 0.3s;
-    }
-    .stButton>button:hover {
-        background-color: #ff7575;
-        transform: scale(1.02);
-    }
-    .punti-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        text-align: center;
-        border-left: 5px solid #007bff;
-        margin-bottom: 10px;
-    }
-    .sidebar .sidebar-content {
-        background-image: linear-gradient(#2e7bcf,#2e7bcf);
-        color: white;
-    }
-    h1 {
-        color: #1e3d59;
-        font-family: 'Trebuchet MS', sans-serif;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -49,7 +53,7 @@ st.markdown("""
 FILE_DATI = "fanta_data_v3.json"
 PARTECIPANTI_FISSI = ["Alby", "Alfiere", "Edu", "Giorgio", "Keuch", "Lupo", "Marika", "Mavi", "Mery", "Raffo", "Vincenzo"]
 
-# --- LOGICA PUNTEGGI (INVARIATA) ---
+# --- FUNZIONI CORE ---
 TABELLA_PUNTI_DEFAULT = {
     "gay_ci_prova": -5, "approccio_esotico": 15, "conquista_riuscita": 10,
     "fingersi_straniero": 10, "scopata_posto_esotico": 90, "mavi_insulta": 50,
@@ -80,87 +84,72 @@ def salva_dati(dati):
 
 dati = carica_dati()
 
-# --- HEADER CON FOTO DI SAN VITO ---
-st.image("https://images.unsplash.com/photo-1544015759-237f87d3a002?q=80&w=1000", caption="San Vito Lo Capo 2026 🌴")
-st.title("🏆 Fanta-San Vito 2026")
+# --- HEADER ---
+st.image("https://images.unsplash.com/photo-1544015759-237f87d3a002?q=80&w=1000", use_column_width=True)
+st.title("🏖️ Fanta-San Vito 2026")
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("### 🧭 Navigazione")
-    menu = st.radio("Scegli sezione:", ["📊 Classifica", "⚡ Assegna Punti", "📂 Regolamento", "📤 Esporta"])
-    st.divider()
-    st.info("Regola d'oro: Quello che succede a San Vito, finisce in classifica.")
+    st.header("Menu")
+    menu = st.radio("Seleziona:", ["📊 Classifica", "⚡ Registra Azione", "📂 Impostazioni", "📤 Export"])
 
-# --- 1. CLASSIFICA (STILE CARD) ---
+# --- SEZIONE 1: CLASSIFICA ---
 if menu == "📊 Classifica":
-    st.header("Classifica Generale")
+    st.markdown("### 🏆 Classifica in tempo reale")
     
     df_classifica = pd.DataFrame(list(dati["amici"].items()), columns=["Amico", "Punti"]).sort_values(by="Punti", ascending=False)
     
-    cols = st.columns(1) # Unica colonna centrata
     for i, row in enumerate(df_classifica.itertuples(), 1):
-        emoji = "🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else "🏖️"
+        # Determina classe CSS in base alla posizione
+        classe_card = "card-comune"
+        if i == 1: classe_card += " card-oro"
+        elif i == 2: classe_card += " card-argento"
+        elif i == 3: classe_card += " card-bronzo"
+        
+        emoji = "🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else f"{i}."
+        
         st.markdown(f"""
-            <div class="punti-card">
-                <h3 style='margin:0;'>{emoji} {row.Amico}</h3>
-                <h2 style='color:#ff4b4b; margin:0;'>{round(row.Punti, 2)} <small>pt</small></h2>
+            <div class="{classe_card}">
+                <div class="nome-partecipante">{emoji} {row.Amico}</div>
+                <div class="punti-display">{round(row.Punti, 2)} <span style='font-size:14px; color:#666;'>PT</span></div>
             </div>
             """, unsafe_allow_html=True)
-    
-    if dati["log"]:
-        with st.expander("📜 Cronologia Eventi"):
-            for log in reversed(dati["log"]):
-                st.caption(log)
 
-# --- 2. ASSEGNA PUNTI ---
-elif menu == "⚡ Assegna Punti":
-    with st.container():
-        st.header("Registra un Evento")
-        with st.form("form_punti"):
-            col1, col2 = st.columns(2)
-            with col1:
-                amico = st.selectbox("Protagonista", PARTECIPANTI_FISSI)
-            with col2:
-                azione = st.selectbox("Azione", list(dati["regolamento"].keys()))
+# --- SEZIONE 2: ASSEGNA PUNTI ---
+elif menu == "⚡ Registra Azione":
+    st.markdown("### 📝 Aggiungi punti")
+    with st.form("punti_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            amico = st.selectbox("Chi ha colpito ancora?", PARTECIPANTI_FISSI)
+        with col2:
+            azione = st.selectbox("Cosa è successo?", list(dati["regolamento"].keys()))
+        
+        quantita = 1
+        if azione in EVENTI_MOLTIPLICATORE:
+            quantita = st.number_input("Quante persone coinvolte?", min_value=1, step=1)
             
-            quantita = 1
-            if azione in EVENTI_MOLTIPLICATORE:
-                quantita = st.number_input("Persone coinvolte", min_value=1, value=1)
-            
-            submit = st.form_submit_button("CONFERMA AZIONE 🚀")
-            
-            if submit:
-                punti = calcola_punteggio_evento(azione, quantita, dati["regolamento"])
-                dati["amici"][amico] += punti
-                dati["log"].append(f"{amico}: {punti} pt ({azione} x{quantita})")
-                salva_dati(dati)
-                st.balloons()
-                st.success(f"Dati salvati per {amico}!")
+        submitted = st.form_submit_button("REGISTRA NELLA STORIA")
+        if submitted:
+            punti = calcola_punteggio_evento(azione, quantita, dati["regolamento"])
+            dati["amici"][amico] += punti
+            dati["log"].append(f"{amico}: {punti} pt ({azione})")
+            salva_dati(dati)
+            st.balloons()
+            st.success(f"Dati salvati! {amico} ora ha {round(dati['amici'][amico], 2)} punti.")
 
-# --- 3. REGOLAMENTO ---
-elif menu == "📂 Regolamento":
-    st.header("Regolamento Attuale")
-    df_reg = pd.DataFrame(list(dati["regolamento"].items()), columns=["Azione", "Punti"])
-    st.dataframe(df_reg, use_container_width=True)
-    
-    st.divider()
-    st.subheader("Aggiorna Regolamento")
-    file_caricato = st.file_uploader("Carica Excel", type=["xlsx"])
-    if file_caricato:
-        df = pd.read_excel(file_caricato)
-        dati["regolamento"] = dict(zip(df['Azione'], df['Punteggio']))
-        salva_dati(dati)
-        st.success("Regolamento aggiornato!")
+# --- SEZIONE 3: IMPOSTAZIONI ---
+elif menu == "📂 Impostazioni":
+    st.markdown("### ⚙️ Regolamento")
+    st.table(pd.DataFrame(list(dati["regolamento"].items()), columns=["Azione", "Valore"]))
 
-# --- 4. ESPORTA ---
-elif menu == "📤 Esporta":
-    st.header("Scarica i Dati")
-    df_export = pd.DataFrame(list(dati["amici"].items()), columns=["Partecipante", "Punteggio"]).sort_values(by="Punteggio", ascending=False)
-    
+# --- SEZIONE 4: EXPORT ---
+elif menu == "📤 Export":
+    st.markdown("### 💾 Backup")
+    df_export = pd.DataFrame(list(dati["amici"].items()), columns=["Nome", "Punti"]).sort_values(by="Punti", ascending=False)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_export.to_excel(writer, index=False)
     output.seek(0)
-    
-    st.download_button("📥 Scarica Excel", data=output, file_name="Classifica_SanVito.xlsx")
-    
+    st.download_button("SCARICA EXCEL CLASSIFICA", data=output, file_name="fanta_sanvito_2026.xlsx")
+        
