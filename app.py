@@ -70,17 +70,20 @@ def salva_dati(dati):
     with open(FILE_DATI, "w") as f:
         json.dump(dati, f, indent=4)
 
-def genera_excel(dati_amici, titolo_foglio):
-    output = io.BytesIO()
-    df = pd.DataFrame(list(dati_amici.items()), columns=["Partecipante", "Punteggio"])
+def genera_excel(dati_dizionario, nome_foglio):
+    """Genera un file Excel dai dati e restituisce il buffer binario."""
+    df = pd.DataFrame(list(dati_dizionario.items()), columns=["Partecipante", "Punteggio"])
     df = df.sort_values(by="Punteggio", ascending=False)
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name=titolo_foglio)
+    
+    output = io.BytesIO()
+    # Usiamo xlsxwriter come engine per massima compatibilità
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name=nome_foglio)
     return output.getvalue()
 
 dati = carica_dati()
 
-# --- RESET ORE 08:00 ---
+# --- RESET AUTOMATICO ORE 08:00 ---
 ora_attuale = datetime.now()
 oggi_str = ora_attuale.strftime("%Y-%m-%d")
 if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
@@ -88,23 +91,27 @@ if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
     dati["ultima_pulizia"] = oggi_str
     salva_dati(dati)
 
-# --- SIDEBAR ---
+# --- SIDEBAR: GESTIONE ---
 with st.sidebar:
-    st.title("⚙️ Gestione")
+    st.title("⚙️ Stato Vacanza")
     is_running = dati.get("is_running", False)
+    
     if not is_running:
         if st.button("▶️ INIZIA VACANZA"):
             dati["is_running"] = True
             salva_dati(dati)
             st.rerun()
     else:
+        st.success("✅ Vacanza in corso")
         if st.button("⏹️ STOP VACANZA"):
             dati["is_running"] = False
             salva_dati(dati)
             st.rerun()
-    menu = st.radio("Vai a:", ["📊 Classifiche", "⚡ Assegna Punti", "📜 Regolamento"])
+            
+    st.divider()
+    menu = st.radio("Sezioni:", ["📊 Classifiche", "⚡ Assegna Punti", "📜 Regolamento"])
 
-# --- MENU: CLASSIFICHE ---
+# --- SEZIONE: CLASSIFICHE ---
 if menu == "📊 Classifiche":
     st.title("🏆 Fanta-SanVito 2026")
     tab1, tab2 = st.tabs(["🌎 Classifica Generale", "📅 Classifica di Oggi"])
@@ -118,44 +125,61 @@ if menu == "📊 Classifiche":
             elif i==3: classe += " card-bronzo"
             st.markdown(f'<div class="{classe}"><div class="nome-partecipante">{i}. {row.Amico}</div><div class="punti-display">{round(row.Punti, 2)}</div></div>', unsafe_allow_html=True)
         
-        ex1 = genera_excel(dati["amici"], "Generale")
-        st.download_button(label="📥 Scarica Excel Generale", data=ex1, file_name=f"Generale_{oggi_str}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # Download Excel Generale
+        excel_gen = genera_excel(dati["amici"], "Classifica Generale")
+        st.download_button(
+            label="📥 Esporta Classifica Generale (Excel)",
+            data=excel_gen,
+            file_name=f"FantaSanVito_Generale_{oggi_str}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     with tab2:
-        st.subheader("Punteggi accumulati dalle 08:00")
+        st.subheader("Punteggi accumulati oggi (dalle 08:00)")
         df_day = pd.DataFrame(list(dati["punti_giornalieri"].items()), columns=["Amico", "Punti"]).sort_values("Punti", ascending=False)
         st.table(df_day)
         
-        ex2 = genera_excel(dati["punti_giornalieri"], "Oggi")
-        st.download_button(label="📥 Scarica Excel Oggi", data=ex2, file_name=f"Oggi_{oggi_str}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # Download Excel Giornaliero
+        excel_day = genera_excel(dati["punti_giornalieri"], "Classifica Oggi")
+        st.download_button(
+            label="📥 Esporta Classifica Oggi (Excel)",
+            data=excel_day,
+            file_name=f"FantaSanVito_Oggi_{oggi_str}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-# --- MENU: ASSEGNA PUNTI ---
+# --- SEZIONE: ASSEGNA PUNTI ---
 elif menu == "⚡ Assegna Punti":
     st.title("📝 Registra Evento")
     if not dati.get("is_running", False):
-        st.warning("⚠️ Clicca INIZIA nella sidebar per registrare punti.")
+        st.warning("⚠️ La vacanza non è ancora iniziata. Clicca 'INIZIA VACANZA' nella sidebar per registrare i punteggi.")
     else:
-        with st.form("p_form"):
+        with st.form("punti_form"):
             amico = st.selectbox("Chi?", PARTECIPANTI_FISSI)
-            azione = st.selectbox("Cosa?", list(dati["regolamento"].keys()))
-            qta = st.number_input("Quantità", min_value=1, step=1, value=1)
+            azione = st.selectbox("Azione", list(dati["regolamento"].keys()))
+            qta = st.number_input("Quantità (per bonus moltiplicatore)", min_value=1, value=1)
             
             if st.form_submit_button("REGISTRA 🚀"):
-                base = dati["regolamento"].get(azione, 0)
-                if azione in EVENTI_MOLTIPLICATORE and qta > 1:
-                    punti = sum(base * (1.25 ** i) for i in range(qta))
-                else:
-                    punti = base * qta
+                punti_base = dati["regolamento"].get(azione, 0)
                 
-                dati["amici"][amico] += punti
-                dati["punti_giornalieri"][amico] += punti
-                dati["log"].append(f"{datetime.now().strftime('%H:%M')} - {amico}: {round(punti, 2)} pt")
+                # Calcolo con bonus 25% (1.25x) per occorrenze successive se previsto
+                if azione in EVENTI_MOLTIPLICATORE and qta > 1:
+                    punti_totali = sum(punti_base * (1.25 ** i) for i in range(qta))
+                else:
+                    punti_totali = punti_base * qta
+                
+                dati["amici"][amico] += punti_totali
+                dati["punti_giornalieri"][amico] += punti_totali
+                dati["log"].append(f"{datetime.now().strftime('%H:%M')} - {amico}: {round(punti_totali, 2)} pt ({azione})")
+                
                 salva_dati(dati)
                 st.balloons()
-                st.success("Registrato!")
+                st.success(f"Registrato! {amico} ha guadagnato {round(punti_totali, 2)} punti.")
 
-# --- MENU: REGOLAMENTO ---
+# --- SEZIONE: REGOLAMENTO ---
 elif menu == "📜 Regolamento":
-    st.title("📖 Punteggi")
-    st.table(pd.DataFrame(list(dati["regolamento"].items()), columns=["Azione", "Punti"]))
+    st.title("📖 Regole e Punteggi")
+    df_reg = pd.DataFrame(list(dati["regolamento"].items()), columns=["Evento", "Valore Punti"])
+    st.table(df_reg)
+
     
