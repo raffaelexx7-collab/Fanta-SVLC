@@ -58,13 +58,9 @@ def carica_dati():
             with open(FILE_DATI, "r") as f:
                 caricati = json.load(f)
                 for k in default:
-                    if k not in caricati:
-                        caricati[k] = default[k]
-                if caricati["log"] and isinstance(caricati["log"][0], str):
-                    caricati["log"] = [] 
+                    if k not in caricati: caricati[k] = default[k]
                 return caricati
-        except:
-            return default
+        except: return default
     return default
 
 def salva_dati(dati):
@@ -72,8 +68,7 @@ def salva_dati(dati):
         json.dump(dati, f, indent=4)
 
 def genera_excel(dati_dict, nome_foglio):
-    df = pd.DataFrame(list(dati_dict.items()), columns=["Partecipante", "Punteggio"])
-    df = df.sort_values(by="Punteggio", ascending=False)
+    df = pd.DataFrame(list(dati_dict.items()), columns=["Partecipante", "Punteggio"]).sort_values("Punteggio", ascending=False)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name=nome_foglio)
@@ -81,7 +76,7 @@ def genera_excel(dati_dict, nome_foglio):
 
 dati = carica_dati()
 
-# --- RESET GIORNALIERO AUTOMATICO ---
+# --- RESET GIORNALIERO ---
 ora_attuale = datetime.now()
 oggi_str = ora_attuale.strftime("%Y-%m-%d")
 if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
@@ -92,8 +87,7 @@ if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
 # --- SIDEBAR ---
 with st.sidebar:
     st.title("⚙️ Gestione")
-    running = dati.get("is_running", False)
-    if not running:
+    if not dati.get("is_running", False):
         if st.button("▶️ INIZIA VACANZA"):
             dati["is_running"] = True
             salva_dati(dati)
@@ -106,43 +100,43 @@ with st.sidebar:
             st.rerun()
     
     menu = st.radio("Sezioni:", ["📊 Classifiche", "⚡ Assegna Punti", "🕒 Cronologia", "📜 Regolamento"])
-    
     st.divider()
-    # TASTO RESET TOTALE
-    st.warning("Zona Pericolosa")
-    if st.button("🔥 RESET TOTALE PUNTI", help="Azzera tutto: classifica e cronologia"):
+    if st.button("🔥 RESET TOTALE", help="Azzera TUTTI i dati"):
         dati = get_default_dati()
         salva_dati(dati)
-        st.toast("Tutto azzerato!")
         st.rerun()
+
+# --- FUNZIONE GRAFICA CLASSIFICA ---
+def mostra_classifica_grafica(dizionario_punti):
+    df = pd.DataFrame(list(dizionario_punti.items()), columns=["Amico", "Punti"]).sort_values("Punti", ascending=False)
+    for i, row in enumerate(df.itertuples(), 1):
+        classe = "card-comune " + ("card-oro" if i==1 else "card-argento" if i==2 else "card-bronzo" if i==3 else "")
+        st.markdown(f'<div class="{classe}"><div class="nome-partecipante">{i}. {row.Amico}</div><div class="punti-display">{round(row.Punti, 2)}</div></div>', unsafe_allow_html=True)
 
 # --- MENU: CLASSIFICHE ---
 if menu == "📊 Classifiche":
     st.title("🏆 Classifiche San Vito")
-    tab1, tab2 = st.tabs(["🌎 Totale", "📅 Oggi"])
+    tab1, tab2 = st.tabs(["🌎 Classifica Totale", "📅 Classifica di Oggi"])
     
     with tab1:
-        df_gen = pd.DataFrame(list(dati["amici"].items()), columns=["Amico", "Punti"]).sort_values("Punti", ascending=False)
-        for i, row in enumerate(df_gen.itertuples(), 1):
-            classe = "card-comune " + ("card-oro" if i==1 else "card-argento" if i==2 else "card-bronzo" if i==3 else "")
-            st.markdown(f'<div class="{classe}"><div class="nome-partecipante">{i}. {row.Amico}</div><div class="punti-display">{round(row.Punti, 2)}</div></div>', unsafe_allow_html=True)
-        
-        try:
-            ex_gen = genera_excel(dati["amici"], "Generale")
-            st.download_button("📥 Scarica Excel Totale", ex_gen, f"Fanta_Generale_{oggi_str}.xlsx")
-        except: st.error("Errore Excel")
+        mostra_classifica_grafica(dati["amici"])
+        ex_gen = genera_excel(dati["amici"], "Totale")
+        st.download_button("📥 Scarica Excel Totale", ex_gen, f"Totale_{oggi_str}.xlsx")
 
     with tab2:
-        df_day = pd.DataFrame(list(dati["punti_giornalieri"].items()), columns=["Amico", "Punti"]).sort_values("Punti", ascending=False)
-        st.table(df_day)
+        mostra_classifica_grafica(dati["punti_giornalieri"])
+        ex_day = genera_excel(dati["punti_giornalieri"], "Oggi")
+        st.download_button("📥 Scarica Excel Oggi", ex_day, f"Oggi_{oggi_str}.xlsx")
 
 # --- MENU: ASSEGNA PUNTI ---
 elif menu == "⚡ Assegna Punti":
-    st.title("📝 Registra Azione")
+    st.title("📝 Gestione Punti")
+    
+    st.subheader("Aggiungi Punteggio")
     if not dati.get("is_running", False):
-        st.warning("⚠️ Attiva la vacanza nella sidebar!")
+        st.warning("Attiva la vacanza nella sidebar!")
     else:
-        with st.form("form_punti"):
+        with st.form("form_punti", clear_on_submit=True):
             amico = st.selectbox("Chi?", PARTECIPANTI_FISSI)
             azione = st.selectbox("Cosa?", list(dati["regolamento"].keys()))
             qta = st.number_input("Quantità", 1, 100, 1)
@@ -150,42 +144,65 @@ elif menu == "⚡ Assegna Punti":
                 base = dati["regolamento"].get(azione, 0)
                 tot = sum(base * (1.25 ** i) for i in range(qta)) if azione in EVENTI_MOLTIPLICATORE else base * qta
                 
-                timestamp = datetime.now().strftime("%d/%m %H:%M")
-                dati["log"].append({"nome": amico, "data": timestamp, "azione": azione, "punti": round(tot, 2)})
+                log_entry = {
+                    "id": datetime.now().timestamp(),
+                    "nome": amico, 
+                    "data_ora": datetime.now().strftime("%d/%m %H:%M"), 
+                    "azione": azione, 
+                    "punti": round(tot, 2),
+                    "giorno": oggi_str 
+                }
+                dati["log"].append(log_entry)
                 dati["amici"][amico] += tot
                 dati["punti_giornalieri"][amico] += tot
                 salva_dati(dati)
-                st.success(f"Registrato! {amico} +{round(tot, 2)} pt")
-                st.rerun()
+                
+                # --- PALLONCINI REINSERITI QUI ---
+                st.balloons()
+                st.success(f"Registrato: {amico} +{round(tot, 2)}!")
+                # Il rerun deve essere chiamato dopo i palloncini o st.success per dar modo di vederli
+                # ma in Streamlit a volte i palloncini scompaiono subito col rerun.
+                # Se non li vedi, togli lo st.rerun() qui sotto.
 
-        st.divider()
-        st.subheader("Modifica rapida")
-        if st.button("↩️ Elimina ultimo inserimento"):
-            if dati["log"]:
-                ultimo = dati["log"].pop()
-                dati["amici"][ultimo["nome"]] -= ultimo["punti"]
-                dati["punti_giornalieri"][ultimo["nome"]] -= ultimo["punti"]
-                salva_dati(dati)
-                st.warning(f"Eliminato: {ultimo['nome']} ({ultimo['azione']})")
-                st.rerun()
-            else:
-                st.info("Nessuna azione da eliminare.")
+    st.divider()
+    
+    # ELIMINAZIONE SELETTIVA
+    st.subheader("🗑️ Elimina un errore")
+    if dati["log"]:
+        opzioni_log = {f"{l['data_ora']} - {l['nome']} ({l['azione']} {l['punti']}pt)": i 
+                       for i, l in enumerate(reversed(dati["log"]))}
+        
+        selezione = st.selectbox("Quale inserimento vuoi eliminare?", list(opzioni_log.keys()))
+        
+        if st.button("ELIMINA SELEZIONATO ❌"):
+            idx_reale = len(dati["log"]) - 1 - opzioni_log[selezione]
+            eliminato = dati["log"].pop(idx_reale)
+            
+            dati["amici"][eliminato["nome"]] -= eliminato["punti"]
+            if eliminato.get("giorno") == oggi_str:
+                dati["punti_giornalieri"][eliminato["nome"]] -= eliminato["punti"]
+            
+            salva_dati(dati)
+            st.error(f"Eliminato: {selezione}")
+            st.rerun()
+    else:
+        st.info("Nessun punteggio presente da eliminare.")
 
 # --- MENU: CRONOLOGIA ---
 elif menu == "🕒 Cronologia":
-    st.title("🕒 Cronologia Punteggi")
+    st.title("🕒 Cronologia")
     for persona in PARTECIPANTI_FISSI:
         log_persona = [l for l in dati["log"] if isinstance(l, dict) and l.get("nome") == persona]
-        with st.expander(f"👤 {persona} - Totale: {round(dati['amici'][persona], 2)} pt"):
-            if not log_persona:
-                st.write("Nessun dato.")
-            else:
-                df_log = pd.DataFrame(log_persona)[["data", "azione", "punti"]]
-                df_log.columns = ["Data/Ora", "Evento", "Punti"]
+        with st.expander(f"👤 {persona} - {round(dati['amici'][persona], 2)} pt"):
+            if log_persona:
+                df_log = pd.DataFrame(log_persona)[["data_ora", "azione", "punti"]]
+                df_log.columns = ["Ora", "Azione", "PT"]
                 st.table(df_log.iloc[::-1])
+            else:
+                st.write("Nessun dato.")
 
 # --- MENU: REGOLAMENTO ---
 elif menu == "📜 Regolamento":
-    st.title("📖 Tabella Punteggi")
+    st.title("📖 Regolamento")
     st.table(pd.DataFrame(list(dati["regolamento"].items()), columns=["Azione", "Punti"]))
     
