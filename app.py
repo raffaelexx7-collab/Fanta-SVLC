@@ -54,12 +54,10 @@ def carica_dati():
         "is_running": False,
         "ultima_pulizia": None
     }
-    
     if os.path.exists(FILE_DATI):
         try:
             with open(FILE_DATI, "r") as f:
                 caricati = json.load(f)
-                # FIX: Uniamo i dati caricati con la struttura nuova per evitare KeyError
                 for key in nuovi_dati:
                     if key not in caricati:
                         caricati[key] = nuovi_dati[key]
@@ -74,8 +72,8 @@ def salva_dati(dati):
 
 def genera_excel(dati_amici, titolo_foglio):
     output = io.BytesIO()
-    df = pd.DataFrame(list(dati_amici.items()), columns=["Partecipante", "Punteggio Totale"])
-    df = df.sort_values(by="Punteggio Totale", ascending=False)
+    df = pd.DataFrame(list(dati_amici.items()), columns=["Partecipante", "Punteggio"])
+    df = df.sort_values(by="Punteggio", ascending=False)
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name=titolo_foglio)
     return output.getvalue()
@@ -93,8 +91,8 @@ if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
 # --- SIDEBAR ---
 with st.sidebar:
     st.title("⚙️ Gestione")
-    # Usiamo dati.get() per sicurezza extra
-    if not dati.get("is_running", False):
+    is_running = dati.get("is_running", False)
+    if not is_running:
         if st.button("▶️ INIZIA VACANZA"):
             dati["is_running"] = True
             salva_dati(dati)
@@ -120,13 +118,16 @@ if menu == "📊 Classifiche":
             elif i==3: classe += " card-bronzo"
             st.markdown(f'<div class="{classe}"><div class="nome-partecipante">{i}. {row.Amico}</div><div class="punti-display">{round(row.Punti, 2)}</div></div>', unsafe_allow_html=True)
         
-        excel_data = genera_excel(dati["amici"], "Classifica Generale")
-        st.download_button(label="📥 Scarica Excel", data=excel_data, file_name=f"Classifica_Generale_{oggi_str}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        ex1 = genera_excel(dati["amici"], "Generale")
+        st.download_button(label="📥 Scarica Excel Generale", data=ex1, file_name=f"Generale_{oggi_str}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     with tab2:
-        st.subheader("Punteggi dalle 08:00 di oggi")
+        st.subheader("Punteggi accumulati dalle 08:00")
         df_day = pd.DataFrame(list(dati["punti_giornalieri"].items()), columns=["Amico", "Punti"]).sort_values("Punti", ascending=False)
         st.table(df_day)
+        
+        ex2 = genera_excel(dati["punti_giornalieri"], "Oggi")
+        st.download_button(label="📥 Scarica Excel Oggi", data=ex2, file_name=f"Oggi_{oggi_str}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # --- MENU: ASSEGNA PUNTI ---
 elif menu == "⚡ Assegna Punti":
@@ -137,7 +138,7 @@ elif menu == "⚡ Assegna Punti":
         with st.form("p_form"):
             amico = st.selectbox("Chi?", PARTECIPANTI_FISSI)
             azione = st.selectbox("Cosa?", list(dati["regolamento"].keys()))
-            qta = st.number_input("Quante volte/persone?", min_value=1, step=1, value=1)
+            qta = st.number_input("Quantità", min_value=1, step=1, value=1)
             
             if st.form_submit_button("REGISTRA 🚀"):
                 base = dati["regolamento"].get(azione, 0)
@@ -148,12 +149,13 @@ elif menu == "⚡ Assegna Punti":
                 
                 dati["amici"][amico] += punti
                 dati["punti_giornalieri"][amico] += punti
-                dati["log"].append(f"{datetime.now().strftime('%H:%M')} - {amico}: {round(punti, 2)} pt ({azione})")
+                dati["log"].append(f"{datetime.now().strftime('%H:%M')} - {amico}: {round(punti, 2)} pt")
                 salva_dati(dati)
                 st.balloons()
-                st.success(f"Registrato!")
+                st.success("Registrato!")
 
 # --- MENU: REGOLAMENTO ---
 elif menu == "📜 Regolamento":
     st.title("📖 Punteggi")
     st.table(pd.DataFrame(list(dati["regolamento"].items()), columns=["Azione", "Punti"]))
+    
