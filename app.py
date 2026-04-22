@@ -127,62 +127,7 @@ from datetime import datetime, time
 from fpdf import FPDF
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="Fanta-SanVito 2026", layout="centered", page_icon="🏖️")
 
-# --- CSS PER GRAFICA E LEGGIBILITÀ ---
-st.markdown("""
-    <style>
-    .main { background-color: #eef2f7; }
-    .card-comune {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 12px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        margin-bottom: 12px;
-        border: 2px solid #d1d9e6;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .card-oro { border: 3px solid #FFD700; background-color: #FFFDF0; }
-    .card-argento { border: 3px solid #C0C0C0; background-color: #F8F8F8; }
-    .card-bronzo { border: 3px solid #CD7F32; background-color: #FFF9F5; }
-    
-    .nome-partecipante {
-        color: #1a2a6c;
-        font-size: 22px !important;
-        font-weight: 800 !important;
-    }
-    .punti-display {
-        color: #ff4b4b;
-        font-size: 26px !important;
-        font-weight: 900 !important;
-    }
-    .stButton>button {
-        border-radius: 10px;
-        background-color: #1a2a6c;
-        color: white;
-        font-weight: bold;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- COSTANTI ---
-FILE_DATI = "fanta_data_v3.json"
-PARTECIPANTI_FISSI = ["Alby", "Alfiere", "Edu", "Giorgio", "Keuch", "Lupo", "Marika", "Mavi", "Mery", "Raffo", "Vincenzo"]
-TABELLA_PUNTI_DEFAULT = {
-    "gay_ci_prova": -5, "approccio_esotico": 15, "conquista_riuscita": 10,
-    "fingersi_straniero": 10, "scopata_posto_esotico": 90, "mavi_insulta": 50,
-    "jacopo_non_ruba": 100, "rifiuto_faccende": -20, "medusa_punto": -15,
-    "medusa_pisciata": 30, "alfiere_sclera": -15, "alfiere_beve": 50,
-    "dormire_fuori": 25, "ospedale": -100, "secchiata_acqua": -40, "vestito_da_donna": 30
-}
-EVENTI_MOLTIPLICATORE = ["conquista_riuscita", "scopata_posto_esotico"]
-
-# --- FUNZIONI DI SERVIZIO ---
-def genera_pdf(dati_amici, titolo):
-    pdf = FPDF()
-    pdf.add_page()
     pdf.set_font("Arial", "B", 16)
     pdf.cell(190, 10, txt=titolo, ln=True, align="C")
     pdf.ln(10)
