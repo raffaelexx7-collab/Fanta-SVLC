@@ -32,7 +32,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- COSTANTI E DATI ---
+# --- COSTANTI ---
 FILE_DATI = "fanta_data_v3.json"
 PARTECIPANTI_FISSI = ["Alby", "Alfiere", "Edu", "Giorgio", "Keuch", "Lupo", "Marika", "Mavi", "Mery", "Raffo", "Vincenzo"]
 TABELLA_PUNTI_DEFAULT = {
@@ -46,13 +46,7 @@ EVENTI_MOLTIPLICATORE = ["conquista_riuscita", "scopata_posto_esotico"]
 
 # --- FUNZIONI DI SERVIZIO ---
 def carica_dati():
-    try:
-        if os.path.exists(FILE_DATI):
-            with open(FILE_DATI, "r") as f:
-                return json.load(f)
-    except:
-        pass
-    return {
+    nuovi_dati = {
         "amici": {nome: 0.0 for nome in PARTECIPANTI_FISSI},
         "punti_giornalieri": {nome: 0.0 for nome in PARTECIPANTI_FISSI},
         "log": [],
@@ -60,6 +54,19 @@ def carica_dati():
         "is_running": False,
         "ultima_pulizia": None
     }
+    
+    if os.path.exists(FILE_DATI):
+        try:
+            with open(FILE_DATI, "r") as f:
+                caricati = json.load(f)
+                # FIX: Uniamo i dati caricati con la struttura nuova per evitare KeyError
+                for key in nuovi_dati:
+                    if key not in caricati:
+                        caricati[key] = nuovi_dati[key]
+                return caricati
+        except:
+            return nuovi_dati
+    return nuovi_dati
 
 def salva_dati(dati):
     with open(FILE_DATI, "w") as f:
@@ -75,7 +82,7 @@ def genera_excel(dati_amici, titolo_foglio):
 
 dati = carica_dati()
 
-# --- LOGICA RESET ORE 08:00 ---
+# --- RESET ORE 08:00 ---
 ora_attuale = datetime.now()
 oggi_str = ora_attuale.strftime("%Y-%m-%d")
 if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
@@ -86,7 +93,8 @@ if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
 # --- SIDEBAR ---
 with st.sidebar:
     st.title("⚙️ Gestione")
-    if not dati["is_running"]:
+    # Usiamo dati.get() per sicurezza extra
+    if not dati.get("is_running", False):
         if st.button("▶️ INIZIA VACANZA"):
             dati["is_running"] = True
             salva_dati(dati)
@@ -112,43 +120,27 @@ if menu == "📊 Classifiche":
             elif i==3: classe += " card-bronzo"
             st.markdown(f'<div class="{classe}"><div class="nome-partecipante">{i}. {row.Amico}</div><div class="punti-display">{round(row.Punti, 2)}</div></div>', unsafe_allow_html=True)
         
-        # Bottone per scaricare Excel invece del PDF
         excel_data = genera_excel(dati["amici"], "Classifica Generale")
-        st.download_button(
-            label="📥 Scarica Classifica Excel",
-            data=excel_data,
-            file_name=f"Classifica_Generale_{oggi_str}.xlsx",
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.download_button(label="📥 Scarica Excel", data=excel_data, file_name=f"Classifica_Generale_{oggi_str}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     with tab2:
-        st.subheader("Punteggi accumulati dalle 08:00 di oggi")
+        st.subheader("Punteggi dalle 08:00 di oggi")
         df_day = pd.DataFrame(list(dati["punti_giornalieri"].items()), columns=["Amico", "Punti"]).sort_values("Punti", ascending=False)
         st.table(df_day)
-        
-        # Bottone Excel per la classifica del giorno
-        excel_day_data = genera_excel(dati["punti_giornalieri"], "Classifica Oggi")
-        st.download_button(
-            label="📥 Scarica Excel di Oggi",
-            data=excel_day_data,
-            file_name=f"Classifica_Giornaliera_{oggi_str}.xlsx",
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
 
 # --- MENU: ASSEGNA PUNTI ---
 elif menu == "⚡ Assegna Punti":
     st.title("📝 Registra Evento")
-    if not dati["is_running"]:
-        st.warning("⚠️ La vacanza è in pausa. Clicca INIZIA nella sidebar per registrare punti.")
+    if not dati.get("is_running", False):
+        st.warning("⚠️ Clicca INIZIA nella sidebar per registrare punti.")
     else:
         with st.form("p_form"):
-            amico = st.selectbox("Chi è il colpevole?", PARTECIPANTI_FISSI)
-            azione = st.selectbox("Cosa ha combinato?", list(dati["regolamento"].keys()))
-            qta = st.number_input("Quante volte/persone? (Per baci/scopate)", min_value=1, step=1, value=1)
+            amico = st.selectbox("Chi?", PARTECIPANTI_FISSI)
+            azione = st.selectbox("Cosa?", list(dati["regolamento"].keys()))
+            qta = st.number_input("Quante volte/persone?", min_value=1, step=1, value=1)
             
-            if st.form_submit_button("CONFERMA E REGISTRA 🚀"):
+            if st.form_submit_button("REGISTRA 🚀"):
                 base = dati["regolamento"].get(azione, 0)
-                # Calcolo con moltiplicatore 1.25x se previsto
                 if azione in EVENTI_MOLTIPLICATORE and qta > 1:
                     punti = sum(base * (1.25 ** i) for i in range(qta))
                 else:
@@ -159,10 +151,9 @@ elif menu == "⚡ Assegna Punti":
                 dati["log"].append(f"{datetime.now().strftime('%H:%M')} - {amico}: {round(punti, 2)} pt ({azione})")
                 salva_dati(dati)
                 st.balloons()
-                st.success(f"Registrato! {amico} ha ottenuto {round(punti, 2)} punti.")
+                st.success(f"Registrato!")
 
 # --- MENU: REGOLAMENTO ---
 elif menu == "📜 Regolamento":
-    st.title("📖 Regolamento e Punteggi")
+    st.title("📖 Punteggi")
     st.table(pd.DataFrame(list(dati["regolamento"].items()), columns=["Azione", "Punti"]))
-    
