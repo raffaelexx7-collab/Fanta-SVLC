@@ -3,17 +3,15 @@ import pandas as pd
 import json
 import os
 import io
+from datetime import datetime, time
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Fanta-SanVito 2026", layout="centered", page_icon="🏖️")
 
-# --- CSS AGGIORNATO PER MASSIMA LEGGIBILITÀ ---
+# --- CSS PER GRAFICA ---
 st.markdown("""
     <style>
-    .main {
-        background-color: #eef2f7;
-    }
-    /* Stile per le card della classifica */
+    .main { background-color: #eef2f7; }
     .card-comune {
         background-color: #ffffff;
         padding: 15px;
@@ -28,32 +26,15 @@ st.markdown("""
     .card-oro { border: 3px solid #FFD700; background-color: #FFFDF0; }
     .card-argento { border: 3px solid #C0C0C0; background-color: #F8F8F8; }
     .card-bronzo { border: 3px solid #CD7F32; background-color: #FFF9F5; }
-    
-    .nome-partecipante {
-        color: #1a2a6c;
-        font-size: 24px !important;
-        font-weight: 800 !important;
-        font-family: 'Helvetica Neue', sans-serif;
-    }
-    .punti-display {
-        color: #ff4b4b;
-        font-size: 28px !important;
-        font-weight: 900 !important;
-    }
-    .stButton>button {
-        border-radius: 10px;
-        height: 3em;
-        background-color: #1a2a6c;
-        color: white;
-        font-weight: bold;
-    }
+    .nome-partecipante { color: #1a2a6c; font-size: 22px !important; font-weight: 800 !important; }
+    .punti-display { color: #ff4b4b; font-size: 26px !important; font-weight: 900 !important; }
+    .stButton>button { border-radius: 10px; background-color: #1a2a6c; color: white; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
+# --- COSTANTI E DATI ---
 FILE_DATI = "fanta_data_v3.json"
 PARTECIPANTI_FISSI = ["Alby", "Alfiere", "Edu", "Giorgio", "Keuch", "Lupo", "Marika", "Mavi", "Mery", "Raffo", "Vincenzo"]
-
-# --- FUNZIONI CORE ---
 TABELLA_PUNTI_DEFAULT = {
     "gay_ci_prova": -5, "approccio_esotico": 15, "conquista_riuscita": 10,
     "fingersi_straniero": 10, "scopata_posto_esotico": 90, "mavi_insulta": 50,
@@ -63,136 +44,64 @@ TABELLA_PUNTI_DEFAULT = {
 }
 EVENTI_MOLTIPLICATORE = ["conquista_riuscita", "scopata_posto_esotico"]
 
-def calcola_punteggio_evento(evento, quantita, regolamento):
-    punti_base = regolamento.get(evento, 0)
-    if evento in EVENTI_MOLTIPLICATORE and quantita > 1:
-        totale = sum(punti_base * (1.25 ** i) for i in range(quantita))
-        return round(totale, 2)
-    return round(punti_base * quantita, 2)
-
+# --- FUNZIONI DI SERVIZIO ---
 def carica_dati():
-    if os.path.exists(FILE_DATI):
-        with open(FILE_DATI, "r") as f:
-            dati = json.load(f)
-            for nome in PARTECIPANTI_FISSI:
-                if nome not in dati["amici"]: dati["amici"][nome] = 0.0
-            return dati
-    return {"amici": {nome: 0.0 for nome in PARTECIPANTI_FISSI}, "log": [], "regolamento": TABELLA_PUNTI_DEFAULT}
+    try:
+        if os.path.exists(FILE_DATI):
+            with open(FILE_DATI, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return {
+        "amici": {nome: 0.0 for nome in PARTECIPANTI_FISSI},
+        "punti_giornalieri": {nome: 0.0 for nome in PARTECIPANTI_FISSI},
+        "log": [],
+        "regolamento": TABELLA_PUNTI_DEFAULT,
+        "is_running": False,
+        "ultima_pulizia": None
+    }
 
 def salva_dati(dati):
-    with open(FILE_DATI, "w") as f: json.dump(dati, f)
+    with open(FILE_DATI, "w") as f:
+        json.dump(dati, f, indent=4)
+
+def genera_excel(dati_amici, titolo_foglio):
+    output = io.BytesIO()
+    df = pd.DataFrame(list(dati_amici.items()), columns=["Partecipante", "Punteggio Totale"])
+    df = df.sort_values(by="Punteggio Totale", ascending=False)
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name=titolo_foglio)
+    return output.getvalue()
 
 dati = carica_dati()
 
-# --- HEADER ---
-st.image("https://images.unsplash.com/photo-1544015759-237f87d3a002?q=80&w=1000", use_column_width=True)
-st.title("🏖️ Fanta-San Vito 2026")
+# --- LOGICA RESET ORE 08:00 ---
+ora_attuale = datetime.now()
+oggi_str = ora_attuale.strftime("%Y-%m-%d")
+if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
+    dati["punti_giornalieri"] = {nome: 0.0 for nome in PARTECIPANTI_FISSI}
+    dati["ultima_pulizia"] = oggi_str
+    salva_dati(dati)
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("Menu")
-    menu = st.radio("Seleziona:", ["📊 Classifica", "⚡ Registra Azione", "📂 Impostazioni", "📤 Export"])
-
-# --- SEZIONE 1: CLASSIFICA ---
-if menu == "📊 Classifica":
-    st.markdown("### 🏆 Classifica in tempo reale")
-    
-    df_classifica = pd.DataFrame(list(dati["amici"].items()), columns=["Amico", "Punti"]).sort_values(by="Punti", ascending=False)
-    
-    for i, row in enumerate(df_classifica.itertuples(), 1):
-        # Determina classe CSS in base alla posizione
-        classe_card = "card-comune"
-        if i == 1: classe_card += " card-oro"
-        elif i == 2: classe_card += " card-argento"
-        elif i == 3: classe_card += " card-bronzo"
-        
-        emoji = "🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else f"{i}."
-        
-        st.markdown(f"""
-            <div class="{classe_card}">
-                <div class="nome-partecipante">{emoji} {row.Amico}</div>
-                <div class="punti-display">{round(row.Punti, 2)} <span style='font-size:14px; color:#666;'>PT</span></div>
-            </div>
-            """, unsafe_allow_html=True)
-
-# --- SEZIONE 2: ASSEGNA PUNTI ---
-elif menu == "⚡ Registra Azione":
-    st.markdown("### 📝 Aggiungi punti")
-import streamlit as st
-import pandas as pd
-import json
-import os
-import io
-from datetime import datetime, time
-from fpdf import FPDF
-
-# --- CONFIGURAZIONE PAGINA ---
-
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(190, 10, txt=titolo, ln=True, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(95, 10, "Partecipante", border=1)
-    pdf.cell(95, 10, "Punti", border=1, ln=True)
-    pdf.set_font("Arial", "", 12)
-    classifica = sorted(dati_amici.items(), key=lambda x: x[1], reverse=True)
-    for nome, punti in classifica:
-        pdf.cell(95, 10, nome, border=1)
-        pdf.cell(95, 10, str(round(punti, 2)), border=1, ln=True)
-    return pdf.output(dest='S').encode('latin-1')
-
-def carica_dati():
-    if os.path.exists(FILE_DATI):
-        with open(FILE_DATI, "r") as f:
-            dati = json.load(f)
-    else:
-        dati = {
-            "amici": {nome: 0.0 for nome in PARTECIPANTI_FISSI},
-            "punti_giornalieri": {nome: 0.0 for nome in PARTECIPANTI_FISSI},
-            "log": [],
-            "regolamento": TABELLA_PUNTI_DEFAULT,
-            "is_running": False,
-            "ultima_pulizia": None
-        }
-    
-    # Logica Reset Ore 08:00
-    ora_attuale = datetime.now()
-    oggi_str = ora_attuale.strftime("%Y-%m-%d")
-    if ora_attuale.time() >= time(8, 0) and dati.get("ultima_pulizia") != oggi_str:
-        dati["punti_giornalieri"] = {nome: 0.0 for nome in PARTECIPANTI_FISSI}
-        dati["ultima_pulizia"] = oggi_str
-        with open(FILE_DATI, "w") as f: json.dump(dati, f)
-    return dati
-
-def calcola_punti_esponenziali(evento, qta, regolamento):
-    base = regolamento.get(evento, 0)
-    if evento in EVENTI_MOLTIPLICATORE and qta > 1:
-        return round(sum(base * (1.25 ** i) for i in range(qta)), 2)
-    return round(base * qta, 2)
-
-dati = carica_dati()
-
-# --- SIDEBAR CONTROLLI ---
-with st.sidebar:
-    st.image("https://images.unsplash.com/photo-1544015759-237f87d3a002?q=80&w=1000")
     st.title("⚙️ Gestione")
     if not dati["is_running"]:
         if st.button("▶️ INIZIA VACANZA"):
             dati["is_running"] = True
-            with open(FILE_DATI, "w") as f: json.dump(dati, f)
+            salva_dati(dati)
             st.rerun()
     else:
         if st.button("⏹️ STOP VACANZA"):
             dati["is_running"] = False
-            with open(FILE_DATI, "w") as f: json.dump(dati, f)
+            salva_dati(dati)
             st.rerun()
-    
-    menu = st.radio("Naviga:", ["📊 Classifiche", "⚡ Assegna Punti", "📜 Regolamento"])
+    menu = st.radio("Vai a:", ["📊 Classifiche", "⚡ Assegna Punti", "📜 Regolamento"])
 
 # --- MENU: CLASSIFICHE ---
 if menu == "📊 Classifiche":
-    st.title("🏆 Classifiche San Vito")
-    tab1, tab2 = st.tabs(["🌎 Generale", "📅 Di Oggi (Reset 08:00)"])
+    st.title("🏆 Fanta-SanVito 2026")
+    tab1, tab2 = st.tabs(["🌎 Classifica Generale", "📅 Classifica di Oggi"])
     
     with tab1:
         df_gen = pd.DataFrame(list(dati["amici"].items()), columns=["Amico", "Punti"]).sort_values("Punti", ascending=False)
@@ -203,33 +112,57 @@ if menu == "📊 Classifiche":
             elif i==3: classe += " card-bronzo"
             st.markdown(f'<div class="{classe}"><div class="nome-partecipante">{i}. {row.Amico}</div><div class="punti-display">{round(row.Punti, 2)}</div></div>', unsafe_allow_html=True)
         
-        pdf_data = genera_pdf(dati["amici"], "Classifica Generale Finale")
-        st.download_button("📥 Scarica PDF Classifica", data=pdf_data, file_name="classifica_fanta.pdf")
+        # Bottone per scaricare Excel invece del PDF
+        excel_data = genera_excel(dati["amici"], "Classifica Generale")
+        st.download_button(
+            label="📥 Scarica Classifica Excel",
+            data=excel_data,
+            file_name=f"Classifica_Generale_{oggi_str}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     with tab2:
+        st.subheader("Punteggi accumulati dalle 08:00 di oggi")
         df_day = pd.DataFrame(list(dati["punti_giornalieri"].items()), columns=["Amico", "Punti"]).sort_values("Punti", ascending=False)
         st.table(df_day)
+        
+        # Bottone Excel per la classifica del giorno
+        excel_day_data = genera_excel(dati["punti_giornalieri"], "Classifica Oggi")
+        st.download_button(
+            label="📥 Scarica Excel di Oggi",
+            data=excel_day_data,
+            file_name=f"Classifica_Giornaliera_{oggi_str}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 # --- MENU: ASSEGNA PUNTI ---
 elif menu == "⚡ Assegna Punti":
     st.title("📝 Registra Evento")
     if not dati["is_running"]:
-        st.warning("⚠️ La vacanza non è ancora iniziata! Clicca INIZIA nella sidebar.")
+        st.warning("⚠️ La vacanza è in pausa. Clicca INIZIA nella sidebar per registrare punti.")
     else:
-        with st.form("punti_form"):
-            amico = st.selectbox("Chi?", PARTECIPANTI_FISSI)
-            azione = st.selectbox("Cosa?", list(dati["regolamento"].keys()))
-            qta = st.number_input("Quantità (per baci/scopate)", min_value=1, step=1)
-            if st.form_submit_button("CONFERMA"):
-                punti = calcola_punti_esponenziali(azione, qta, dati["regolamento"])
+        with st.form("p_form"):
+            amico = st.selectbox("Chi è il colpevole?", PARTECIPANTI_FISSI)
+            azione = st.selectbox("Cosa ha combinato?", list(dati["regolamento"].keys()))
+            qta = st.number_input("Quante volte/persone? (Per baci/scopate)", min_value=1, step=1, value=1)
+            
+            if st.form_submit_button("CONFERMA E REGISTRA 🚀"):
+                base = dati["regolamento"].get(azione, 0)
+                # Calcolo con moltiplicatore 1.25x se previsto
+                if azione in EVENTI_MOLTIPLICATORE and qta > 1:
+                    punti = sum(base * (1.25 ** i) for i in range(qta))
+                else:
+                    punti = base * qta
+                
                 dati["amici"][amico] += punti
                 dati["punti_giornalieri"][amico] += punti
-                dati["log"].append(f"{amico}: {punti} pt ({azione})")
-                with open(FILE_DATI, "w") as f: json.dump(dati, f)
+                dati["log"].append(f"{datetime.now().strftime('%H:%M')} - {amico}: {round(punti, 2)} pt ({azione})")
+                salva_dati(dati)
                 st.balloons()
-                st.success("Punteggio aggiornato!")
+                st.success(f"Registrato! {amico} ha ottenuto {round(punti, 2)} punti.")
 
 # --- MENU: REGOLAMENTO ---
 elif menu == "📜 Regolamento":
-    st.title("Regole del Gioco")
-    st.table(pd.DataFrame(list(dati["regolamento"].items()), columns=["Evento", "Punti"]))
+    st.title("📖 Regolamento e Punteggi")
+    st.table(pd.DataFrame(list(dati["regolamento"].items()), columns=["Azione", "Punti"]))
+    
